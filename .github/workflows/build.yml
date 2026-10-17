@@ -9,6 +9,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_API_URL: https://overblown-palpable-easily.ngrok-free.dev
     steps:
       - name: Télécharger le code
         uses: actions/checkout@v4
