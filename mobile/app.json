@@ -1,0 +1,35 @@
+{
+  "name": "R Secure",
+  "slug": "rtl-connect",
+  "version": "1.0.2",
+  "orientation": "portrait",
+  "userInterfaceStyle": "dark",
+  "icon": "./assets/icon.png",
+  "splash": {
+    "backgroundColor": "#0B1620",
+    "resizeMode": "contain"
+  },
+  "android": {
+    "package": "ga.rtlgabon.connect",
+    "versionCode": 3,
+    "adaptiveIcon": {
+      "backgroundColor": "#0B1620",
+      "foregroundImage": "./assets/icon.png"
+    }
+  },
+  "plugins": [
+    [
+      "expo-build-properties",
+      {
+        "android": {
+          "usesCleartextTraffic": true
+        }
+      }
+    ]
+  ],
+  "extra": {
+    "eas": {
+      "projectId": "ef6791a5-b57f-4c87-b22c-efb8a99fd863"
+    }
+  }
+}

@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Administration — R Connect</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1620;--panel:#142431;--red:#ed1c24;--text:#f4f7fa;--muted:#a8b8c5;--line:#304453;--green:#2ecc71;--orange:#ffbf47}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px system-ui,Arial,sans-serif}
+header{padding:22px 16px;background:#101e2a;border-bottom:3px solid var(--red)}
+header h1{margin:0;font-size:22px}
+header p{margin:5px 0 0;color:var(--muted)}
+main{max-width:1000px;margin:auto;padding:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+h2{font-size:18px;margin:0 0 12px}
+label{display:block;margin:10px 0 6px;color:var(--muted)}
+input[type=password],input[type=text],select{width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:#0b1620;color:var(--text);font-size:16px}
+button{border:0;border-radius:8px;padding:11px 14px;background:var(--red);color:white;font-weight:700;font-size:14px;cursor:pointer}
+button.secondary{background:#304453}
+button.confirm{background:#167847}
+button:disabled{opacity:.4;cursor:not-allowed}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.status{padding:10px;border-radius:8px;background:#0b1620;margin-top:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.muted{color:var(--muted)}
+.warning{border-left:4px solid var(--orange);padding:10px;background:#292719;border-radius:6px}
+.summary{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+.pill{padding:6px 10px;border:1px solid var(--line);border-radius:30px;font-size:13px}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:11px 8px;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}
+th{color:var(--muted);font-size:13px}
+.payment{border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:12px}
+.payment h3{font-size:15px;margin:0 0 8px;overflow-wrap:anywhere}
+.payment p{margin:6px 0;overflow-wrap:anywhere}
+.badge{display:inline-block;border-radius:5px;padding:3px 7px;background:#304453;font-size:12px}
+.badge.pending{color:var(--orange)}
+.badge.paid{color:var(--green)}
+.check{display:flex;gap:10px;align-items:flex-start;color:var(--text)}
+.check input{margin-top:5px}
+.hidden{display:none}
+@media(min-width:760px){.payment-list{display:grid;grid-template-columns:1fr 1fr;gap:12px}.payment{margin-top:0}}
+</style>
+</head>
+<body>
+<header>
+  <h1>R Connect <span style="color:#ed1c24">/</span> Administration</h1>
+  <p>Gestion manuelle des paiements Airtel Money</p>
+</header>
+<main>
+  <section class="card" id="login">
+    <h2>Accès administrateur</h2>
+    <p class="muted">Saisis la clé d’administration configurée sur le serveur. Elle reste en mémoire jusqu’au rechargement ou à la fermeture de cette page.</p>
+    <label for="key">Clé d’administration</label>
+    <input id="key" type="password" autocomplete="current-password" placeholder="Clé ADMIN_KEY">
+    <div class="actions">
+      <button id="connect">Se connecter</button>
+    </div>
+    <div id="loginMessage" class="status hidden" role="status"></div>
+  </section>
+
+  <section class="card hidden" id="dashboard">
+    <h2>Demandes de paiement</h2>
+    <div class="warning">Avant de confirmer, vérifie dans Airtel Money que le transfert correspondant est réellement reçu sur le numéro 077425267. Ne confirme jamais une demande uniquement sur la base d’une capture d’écran fournie par le client.</div>
+    <div class="summary" id="summary"></div>
+    <label for="providerFilter">Filtrer les demandes par fournisseur</label>
+    <select id="providerFilter">
+      <option value="all">Toutes les demandes</option>
+      <option value="airtel_money_manual">Airtel Money manuel</option>
+      <option value="singpay">Anciennes demandes SingPay</option>
+    </select>
+    <div class="actions">
+      <button id="refresh" class="secondary">Actualiser la liste</button>
+      <button id="logout" class="secondary">Déconnexion</button>
+    </div>
+    <div id="message" class="status" role="status">Connecte-toi pour charger les demandes.</div>
+    <div id="payments" class="payment-list"></div>
+
+    <hr style="border:0;border-top:1px solid var(--line);margin:24px 0">
+    <h2>Commissions par collègue</h2>
+    <p class="muted">Bilan en lecture seule : commissions générées, payées, réservées et disponibles.</p>
+    <div class="actions">
+      <button id="referralRefresh" class="secondary" type="button">Actualiser les commissions</button>
+    </div>
+    <div id="referralMessage" class="status" role="status">Bilan non chargé.</div>
+    <div id="referralSummary" class="payment-list"></div>
+
+    <hr style="border:0;border-top:1px solid var(--line);margin:24px 0">
+    <h2>Historique des ventes et parrainages</h2>
+    <p class="muted">Jusqu'à 200 licences récentes. Les ventes sans code ou sans parrain reconnu sont signalées.</p>
+    <label for="salesSearch">Rechercher un client, une licence, un téléphone ou un code de parrainage</label>
+    <input id="salesSearch" type="text" maxlength="100" placeholder="Nom, téléphone, code ou référence">
+    <div class="actions">
+      <button id="salesRefresh" class="secondary" type="button">Rechercher les ventes</button>
+    </div>
+    <div id="salesMessage" class="status" role="status">Historique des ventes non chargé.</div>
+    <div id="salesHistory" class="payment-list"></div>
+
+    <hr style="border:0;border-top:1px solid var(--line);margin:24px 0">
+    <h2>Commissions par collègue</h2>
+    <p class="muted">Bilan en lecture seule : commissions générées, payées, réservées et disponibles.</p>
+    <div class="actions">
+      <button id="referralRefresh" class="secondary" type="button">Actualiser les commissions</button>
+    </div>
+    <div id="referralMessage" class="status" role="status">Bilan non chargé.</div>
+    <div id="referralSummary" class="payment-list"></div>
+
+    <hr style="border:0;border-top:1px solid var(--line);margin:24px 0">
+    <h2>Historique des ventes et parrainages</h2>
+    <p class="muted">Jusqu'à 200 licences récentes. Les ventes sans code ou sans parrain reconnu sont signalées.</p>
+    <label for="salesSearch">Rechercher un client, une licence, un téléphone ou un code de parrainage</label>
+    <input id="salesSearch" type="text" maxlength="100" placeholder="Nom, téléphone, code ou référence">
+    <div class="actions">
+      <button id="salesRefresh" class="secondary" type="button">Rechercher les ventes</button>
+    </div>
+    <div id="salesMessage" class="status" role="status">Historique des ventes non chargé.</div>
+    <div id="salesHistory" class="payment-list"></div>
+
+    <hr style="border:0;border-top:1px solid var(--line);margin:24px 0">
+    <h2>Historique des licences</h2>
+    <p class="muted">Consultation en lecture seule. Jusqu'à 100 licences, des plus récentes aux plus anciennes.</p>
+    <label for="licenseSearch">Rechercher par code de licence ou référence de paiement</label>
+    <input id="licenseSearch" type="text" maxlength="100" placeholder="Code ou référence">
+    <div class="actions">
+      <button id="historyRefresh" class="secondary" type="button">Rechercher</button>
+    </div>
+    <div id="historyMessage" class="status" role="status">Historique non chargé.</div>
+    <div id="licenseHistory"></div>
+  </section>
+</main>
+<script>
+(() => {
+  let adminKey = "";
+  let providerFilter = "all";
+  const $ = id => document.getElementById(id);
+  const login = $("login");
+  const dashboard = $("dashboard");
+  const message = $("message");
+  const payments = $("payments");
+  const summary = $("summary");
+
+  function showStatus(element, text) {
+    element.textContent = text;
+    element.classList.remove("hidden");
+  }
+
+  async function api(path, options = {}) {
+    const response = await fetch(path, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        "x-admin-key": adminKey
+      },
+      cache: "no-store"
+    });
+    const raw = await response.text();
+    let data;
+    try { data = JSON.parse(raw); }
+    catch { data = { error: raw || "Réponse illisible du serveur." }; }
+    if (!response.ok) throw new Error(data.error || `Erreur HTTP ${response.status}`);
+    return data;
+  }
+
+  function makeButton(text, className, action) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = text;
+    if (className) button.className = className;
+    button.addEventListener("click", action);
+    return button;
+  }
+
+  function field(label, value) {
+    const p = document.createElement("p");
+    const strong = document.createElement("strong");
+    strong.textContent = label + " : ";
+    p.append(strong, document.createTextNode(value == null || value === "" ? "—" : String(value)));
+    return p;
+  }
+
+  async function loadPayments() {
+    message.textContent = "Chargement des demandes…";
+    payments.replaceChildren();
+    try {
+      const allRows = await api("/admin/payments");
+      const counts = { pending: 0, paid: 0, other: 0 };
+      allRows.forEach(p => {
+        if (p.status === "pending") counts.pending++;
+        else if (p.status === "paid") counts.paid++;
+        else counts.other++;
+      });
+      const rows = allRows.filter(p =>
+        providerFilter === "all" || p.provider === providerFilter
+      );
+
+      summary.replaceChildren();
+    $("referralSummary").replaceChildren();
+    $("salesHistory").replaceChildren();
+    $("licenseHistory").replaceChildren();
+    $("historyMessage").textContent = "Historique non chargé.";
+    $("licenseSearch").value = "";
+      [
+        `Total : ${allRows.length}`,
+        `Airtel Money : ${allRows.filter(p => p.provider === "airtel_money_manual").length}`,
+        `SingPay : ${allRows.filter(p => p.provider === "singpay").length}`,
+        `Demandes en attente : ${counts.pending}`,
+        `Payées : ${counts.paid}`,
+        `Autres statuts : ${counts.other}`
+      ].forEach(text => {
+        const span = document.createElement("span");
+        span.className = "pill";
+        span.textContent = text;
+        summary.append(span);
+      });
+
+      if (!rows.length) {
+        message.textContent = "Aucune demande de paiement.";
+        return;
+      }
+
+      message.textContent = `${rows.length} demande(s) affichée(s), les plus récentes en premier.`;
+      rows.forEach(p => {
+        const card = document.createElement("article");
+        card.className = "payment";
+
+        const title = document.createElement("h3");
+        title.textContent = p.reference;
+        card.append(
+          field("Montant", `${p.amount} FCFA`),
+          field("Téléphone du payeur", p.phone),
+          field("Mode", p.provider === "airtel_money_manual" ? "Airtel Money manuel" : (p.provider || "Inconnu")),
+          field("Créée le", p.created_at),
+          field("Réception confirmée le", p.receipt_confirmed_at),
+          field("Payée le", p.paid_at),
+          field("Référence de vérification", p.verification_ref),
+          field("Note administrative", p.admin_note)
+        );
+
+        if (p.provider === "airtel_money_manual" && p.status === "pending") {
+          const refLabel = document.createElement("label");
+          refLabel.textContent = "Référence de vérification (facultative)";
+          const refInput = document.createElement("input");
+          refInput.type = "text";
+          refInput.maxLength = 100;
+          refInput.value = p.verification_ref || "";
+          refInput.placeholder = "Référence de transaction reçue";
+          refLabel.append(refInput);
+
+          const noteLabel = document.createElement("label");
+          noteLabel.textContent = "Note administrative (facultative)";
+          const noteInput = document.createElement("input");
+          noteInput.type = "text";
+          noteInput.maxLength = 500;
+          noteInput.value = p.admin_note || "";
+          noteInput.placeholder = "Observation interne";
+          noteLabel.append(noteInput);
+
+          card.append(refLabel, noteLabel);
+
+          const saveButton = makeButton("Enregistrer les informations", "secondary", async () => {
+            saveButton.disabled = true;
+            try {
+              await api("/admin/payments/" + encodeURIComponent(p.reference) + "/metadata", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  verificationRef: refInput.value,
+                  adminNote: noteInput.value
+                })
+              });
+              showStatus(message, "Informations enregistrées pour " + p.reference + ".");
+              await loadPayments();
+      await loadReferralSummary();
+      await loadSalesHistory();
+      await loadLicenseHistory();
+      await loadReferralSummary();
+      await loadSalesHistory();
+      await loadLicenseHistory();
+            } catch (e) {
+              showStatus(message, "Enregistrement refusé : " + e.message);
+              saveButton.disabled = false;
+            }
+          });
+          card.append(saveButton);
+        }
+
+        if (p.provider !== "airtel_money_manual") {
+          const note = document.createElement("p");
+          note.className = "muted";
+          note.textContent = "Ancienne demande ou fournisseur différent : confirmation manuelle désactivée.";
+          card.append(note);
+        } else if (p.status === "pending" && !p.receipt_confirmed_at) {
+          const checkLabel = document.createElement("label");
+          checkLabel.className = "check";
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          const checkText = document.createElement("span");
+          checkText.textContent = "J’ai vérifié la transaction dans Airtel Money et confirmé la réception effective du montant exact.";
+          checkLabel.append(checkbox, checkText);
+          card.append(checkLabel);
+
+          const confirmButton = makeButton("Confirmer la réception", "confirm", async () => {
+            if (!checkbox.checked) {
+              alert("Coche cette case uniquement après avoir vérifié la réception réelle dans Airtel Money.");
+              return;
+            }
+            if (!confirm(`Confirmer que ${p.amount} FCFA ont réellement été reçus pour ${p.reference} ?`)) return;
+            confirmButton.disabled = true;
+            try {
+              await api(`/admin/payments/${encodeURIComponent(p.reference)}/confirm-receipt`, { method: "POST" });
+              showStatus(message, "Réception enregistrée. Tu peux maintenant délivrer le code.");
+              await loadPayments();
+      await loadLicenseHistory();
+            } catch (e) {
+              showStatus(message, "Confirmation refusée : " + e.message);
+              confirmButton.disabled = false;
+            }
+          });
+          card.append(confirmButton);
+        } else if (p.status === "pending" && p.receipt_confirmed_at) {
+          const note = document.createElement("p");
+          note.className = "warning";
+          note.textContent = "Réception confirmée. La licence n’est pas encore délivrée.";
+          card.append(note);
+          const approveButton = makeButton("Délivrer le code", "", async () => {
+            if (!confirm(`Délivrer le code pour ${p.reference} (${p.amount} FCFA) ?`)) return;
+            approveButton.disabled = true;
+            try {
+              const result = await api(`/admin/payments/${encodeURIComponent(p.reference)}/approve`, { method: "POST" });
+              const codeBox = document.createElement("div");
+              codeBox.className = "status";
+              codeBox.textContent = "Code d’activation : " + result.code;
+              card.append(codeBox);
+              const copyButton = makeButton("Copier le code", "secondary", async () => {
+                try {
+                  await navigator.clipboard.writeText(String(result.code));
+                  copyButton.textContent = "Code copié";
+                } catch {
+                  alert("Copie automatique impossible. Sélectionne le code pour le copier.");
+                }
+              });
+              card.append(copyButton);
+              badge.textContent = "Payé";
+              badge.className = "badge paid";
+              note.textContent = "Licence délivrée avec succès.";
+              note.className = "muted";
+              showStatus(message, "Licence délivrée pour la référence " + p.reference + ". Le code reste affiché ci-dessous.");
+            } catch (e) {
+              showStatus(message, "Délivrance refusée : " + e.message);
+              approveButton.disabled = false;
+            }
+          });
+          card.append(approveButton);
+        } else if (p.status === "paid") {
+          const note = document.createElement("p");
+          note.className = "muted";
+          note.textContent = "Ce paiement a déjà été traité.";
+          card.append(note);
+        }
+
+        payments.append(card);
+      });
+    } catch (e) {
+      showStatus(message, "Impossible de charger les paiements : " + e.message);
+      if (/403|Accès refusé/i.test(e.message)) logout();
+    }
+  }
+
+
+  function formatFCFA(value) {
+    return Number(value || 0).toLocaleString("fr-FR") + " FCFA";
+  }
+
+  async function loadReferralSummary() {
+    const box = $("referralSummary");
+    const status = $("referralMessage");
+    status.textContent = "Chargement des commissions…";
+    box.replaceChildren();
+
+    try {
+      const rows = await api("/admin/referrals/summary");
+      if (!rows.length) {
+        status.textContent = "Aucun collègue avec un code de parrainage enregistré.";
+        return;
+      }
+
+      status.textContent = rows.length + " collègue(s) affiché(s).";
+
+      rows.forEach(item => {
+        const card = document.createElement("article");
+        card.className = "payment";
+
+        const title = document.createElement("h3");
+        title.textContent = item.name || "Collègue";
+        card.append(title);
+
+        [
+          ["Téléphone", item.phone],
+          ["Code de parrainage", item.referral_code],
+          ["Ventes attribuées", item.sales_count],
+          ["Commissions générées", formatFCFA(item.earned)],
+          ["Déjà payées", formatFCFA(item.paid)],
+          ["Retraits en attente (réservés)", formatFCFA(item.reserved)],
+          ["Solde disponible", formatFCFA(item.balance)]
+        ].forEach(([label, value]) => card.append(field(label, value)));
+
+        box.append(card);
+      });
+    } catch (e) {
+      status.textContent = "Impossible de charger les commissions : " + e.message;
+      if (/403|Accès refusé/i.test(e.message)) logout();
+    }
+  }
+
+  async function loadSalesHistory() {
+    const box = $("salesHistory");
+    const status = $("salesMessage");
+    status.textContent = "Chargement des ventes…";
+    box.replaceChildren();
+
+    try {
+      const q = $("salesSearch").value.trim();
+      const rows = await api("/admin/referrals/sales?q=" + encodeURIComponent(q));
+
+      if (!rows.length) {
+        status.textContent = "Aucune vente correspondante.";
+        return;
+      }
+
+      status.textContent = rows.length + " vente(s) affichée(s), maximum 200.";
+
+      rows.forEach(item => {
+        const card = document.createElement("article");
+        card.className = "payment";
+
+        const title = document.createElement("h3");
+        title.textContent = "Licence : " + (item.license_code || "—");
+        card.append(title);
+
+        [
+          ["Statut de la licence", item.license_status],
+          ["Date de création", item.license_created_at],
+          ["Client", item.client_name || "Client non identifié"],
+          ["Téléphone du client", item.client_phone],
+          ["Montant payé", item.payment_amount == null
+            ? "—"
+            : formatFCFA(item.payment_amount)],
+          ["Statut du paiement", item.payment_status],
+          ["Référence du paiement", item.payment_reference],
+          ["Code de parrainage utilisé", item.used_referral_code || "Aucun code enregistré"],
+          ["Attribution", item.attribution],
+          ["Collègue parrain", item.referrer_name || "Aucun parrain attribué"],
+          ["Téléphone du parrain", item.referrer_phone],
+          ["Commission générée", formatFCFA(item.commission_amount)],
+          ["Commission déjà payée (ancienne méthode)", formatFCFA(item.commission_paid)],
+          ["Commission restante hors retraits", formatFCFA(item.commission_due)]
+        ].forEach(([label, value]) => card.append(field(label, value)));
+
+        box.append(card);
+      });
+    } catch (e) {
+      status.textContent = "Impossible de charger les ventes : " + e.message;
+      if (/403|Accès refusé/i.test(e.message)) logout();
+    }
+  }
+
+  function formatFCFA(value) {
+    return Number(value || 0).toLocaleString("fr-FR") + " FCFA";
+  }
+
+  async function loadReferralSummary() {
+    const box = $("referralSummary");
+    const status = $("referralMessage");
+    status.textContent = "Chargement des commissions…";
+    box.replaceChildren();
+
+    try {
+      const rows = await api("/admin/referrals/summary");
+      if (!rows.length) {
+        status.textContent = "Aucun collègue avec un code de parrainage enregistré.";
+        return;
+      }
+
+      status.textContent = rows.length + " collègue(s) affiché(s).";
+
+      rows.forEach(item => {
+        const card = document.createElement("article");
+        card.className = "payment";
+
+        const title = document.createElement("h3");
+        title.textContent = item.name || "Collègue";
+        card.append(title);
+
+        [
+          ["Téléphone", item.phone],
+          ["Code de parrainage", item.referral_code],
+          ["Ventes attribuées", item.sales_count],
+          ["Commissions générées", formatFCFA(item.earned)],
+          ["Déjà payées", formatFCFA(item.paid)],
+          ["Retraits en attente (réservés)", formatFCFA(item.reserved)],
+          ["Solde disponible", formatFCFA(item.balance)]
+        ].forEach(([label, value]) => card.append(field(label, value)));
+
+        box.append(card);
+      });
+    } catch (e) {
+      status.textContent = "Impossible de charger les commissions : " + e.message;
+      if (/403|Accès refusé/i.test(e.message)) logout();
+    }
+  }
+
+  async function loadSalesHistory() {
+    const box = $("salesHistory");
+    const status = $("salesMessage");
+    status.textContent = "Chargement des ventes…";
+    box.replaceChildren();
+
+    try {
+      const q = $("salesSearch").value.trim();
+      const rows = await api("/admin/referrals/sales?q=" + encodeURIComponent(q));
+
+      if (!rows.length) {
+        status.textContent = "Aucune vente correspondante.";
+        return;
+      }
+
+      status.textContent = rows.length + " vente(s) affichée(s), maximum 200.";
+
+      rows.forEach(item => {
+        const card = document.createElement("article");
+        card.className = "payment";
+
+        const title = document.createElement("h3");
+        title.textContent = "Licence : " + (item.license_code || "—");
+        card.append(title);
+
+        [
+          ["Statut de la licence", item.license_status],
+          ["Date de création", item.license_created_at],
+          ["Client", item.client_name || "Client non identifié"],
+          ["Téléphone du client", item.client_phone],
+          ["Montant payé", item.payment_amount == null
+            ? "—"
+            : formatFCFA(item.payment_amount)],
+          ["Statut du paiement", item.payment_status],
+          ["Référence du paiement", item.payment_reference],
+          ["Code de parrainage utilisé", item.used_referral_code || "Aucun code enregistré"],
+          ["Attribution", item.attribution],
+          ["Collègue parrain", item.referrer_name || "Aucun parrain attribué"],
+          ["Téléphone du parrain", item.referrer_phone],
+          ["Commission générée", formatFCFA(item.commission_amount)],
+          ["Commission déjà payée (ancienne méthode)", formatFCFA(item.commission_paid)],
+          ["Commission restante hors retraits", formatFCFA(item.commission_due)]
+        ].forEach(([label, value]) => card.append(field(label, value)));
+
+        box.append(card);
+      });
+    } catch (e) {
+      status.textContent = "Impossible de charger les ventes : " + e.message;
+      if (/403|Accès refusé/i.test(e.message)) logout();
+    }
+  }
+
+  async function loadLicenseHistory() {
+    const resultBox = $("licenseHistory");
+    const statusBox = $("historyMessage");
+    statusBox.textContent = "Chargement de l'historique…";
+    resultBox.replaceChildren();
+
+    try {
+      const q = $("licenseSearch").value.trim();
+      const rows = await api("/admin/licenses/history?q=" + encodeURIComponent(q));
+
+      if (!rows.length) {
+        statusBox.textContent = "Aucune licence correspondante.";
+        return;
+      }
+
+      statusBox.textContent = rows.length + " licence(s) affichée(s).";
+
+      rows.forEach(item => {
+        const card = document.createElement("article");
+        card.className = "payment";
+
+        const title = document.createElement("h3");
+        title.textContent = "Licence : " + (item.code || "—");
+        card.append(title);
+
+        [
+          ["Statut de la licence", item.license_status],
+          ["Créée le", item.license_created_at],
+          ["Activée le", item.activated_at],
+          ["Client", item.client_name],
+          ["Téléphone du client", item.client_phone],
+          ["Référence de paiement", item.payment_reference],
+          ["Fournisseur", item.payment_provider],
+          ["Montant", item.payment_amount == null
+            ? "—"
+            : String(item.payment_amount) + " " + (item.payment_currency || "FCFA")],
+          ["Statut du paiement", item.payment_status],
+          ["Paiement créé le", item.payment_created_at],
+          ["Paiement réglé le", item.payment_paid_at]
+        ].forEach(([label, value]) => card.append(field(label, value)));
+
+        resultBox.append(card);
+      });
+    } catch (e) {
+      statusBox.textContent = "Impossible de charger l'historique : " + e.message;
+      if (/403|Accès refusé/i.test(e.message)) logout();
+    }
+  }
+
+  function logout() {
+    adminKey = "";
+    $("key").value = "";
+    dashboard.classList.add("hidden");
+    login.classList.remove("hidden");
+    payments.replaceChildren();
+    summary.replaceChildren();
+    showStatus($("loginMessage"), "Déconnecté.");
+  }
+
+  $("connect").addEventListener("click", async () => {
+    const key = $("key").value.trim();
+    if (!key) {
+      showStatus($("loginMessage"), "Saisis la clé d’administration.");
+      return;
+    }
+    adminKey = key;
+    $("connect").disabled = true;
+    try {
+      await api("/admin/payments");
+      login.classList.add("hidden");
+      dashboard.classList.remove("hidden");
+      await loadPayments();
+    } catch (e) {
+      adminKey = "";
+      showStatus($("loginMessage"), "Connexion refusée : " + e.message);
+    } finally {
+      $("connect").disabled = false;
+    }
+  });
+
+  $("key").addEventListener("keydown", e => {
+    if (e.key === "Enter") $("connect").click();
+  });
+  $("refresh").addEventListener("click", loadPayments);
+  $("providerFilter").addEventListener("change", event => {
+    providerFilter = event.target.value;
+    loadPayments();
+  });
+  $("referralRefresh").addEventListener("click", loadReferralSummary);
+  $("salesRefresh").addEventListener("click", loadSalesHistory);
+  $("salesSearch").addEventListener("keydown", e => {
+    if (e.key === "Enter") loadSalesHistory();
+  });
+  $("referralRefresh").addEventListener("click", loadReferralSummary);
+  $("salesRefresh").addEventListener("click", loadSalesHistory);
+  $("salesSearch").addEventListener("keydown", e => {
+    if (e.key === "Enter") loadSalesHistory();
+  });
+  $("historyRefresh").addEventListener("click", loadLicenseHistory);
+  $("licenseSearch").addEventListener("keydown", e => {
+    if (e.key === "Enter") loadLicenseHistory();
+  });
+  $("logout").addEventListener("click", logout);
+})();
+</script>
+</body>
+</html>

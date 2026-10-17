@@ -1,0 +1,65 @@
+# Secrets et configuration locale
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Bases de données et fichiers SQLite temporaires
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Dépendances et caches
+node_modules/
+.expo/
+.cache/
+npm-debug.log*
+yarn-debug.log*
+
+# Certificats, clés et profils VPN privés
+*.ovpn
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Sauvegardes locales
+*.bak
+
+# Depots Git imbriques
+**/.git/
+
+# APK et builds locaux
+*.apk
+*.aab
+
+# Sauvegardes et variantes locales du code
+*.backup
+*.bak-*
+*.before-*
+*.before-*
+App.js.before-auth
+
+# Exclure la sauvegarde temporaire du dépôt mobile
+**/.git.saved/
+
+# Données locales, sauvegardes et journaux
+**/backups/
+**/backup*/
+**/data/
+**/*.log
+**/*.sqlite*
+**/*.db*
+**/jget.js
+**/manual-test.sh
+
+# Sauvegardes locales de configuration
+*.backup-api
