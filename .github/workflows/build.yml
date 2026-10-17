@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -38,10 +38,20 @@ jobs:
         working-directory: mobile/android
         run: chmod +x gradlew && ./gradlew assembleRelease
 
-      - name: Publier l’APK
+      - name: Préparer le fichier APK
+        run: cp mobile/android/app/build/outputs/apk/release/app-release.apk R-Secure.apk
+
+      - name: Publier l’artefact temporaire
         uses: actions/upload-artifact@v4
         with:
           name: r-secure-apk
-          path: mobile/android/app/build/outputs/apk/release/app-release.apk
-          if-no-files-found: error
+          path: R-Secure.apk
           retention-days: 7
+
+      - name: Publier la Release GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: r-secure-${{ github.run_number }}
+          name: R Secure - Build ${{ github.run_number }}
+          files: R-Secure.apk
+          generate_release_notes: true

@@ -370,8 +370,21 @@ async function blockMac(rawMac) {
   // Vérifie que le routeur a vraiment enregistré la règle (il peut mettre un instant à l'appliquer).
   for (let attempt = 0; attempt < 2; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 800 : 2000));
-    const after = await readMacFilters().catch(() => null);
-    if (!after || after.some((x) => sameMac(x.mac, mac))) return;
+    let after;
+    try {
+      after = await readMacFilters();
+    } catch (_) {
+      continue;
+    }
+
+    const hasIPv4 = after.some(
+      (x) => sameMac(x.mac, mac) && String(x.ippro).toUpperCase() === "IPV4"
+    );
+    const hasIPv6 = after.some(
+      (x) => sameMac(x.mac, mac) && String(x.ippro).toUpperCase() === "IPV6"
+    );
+
+    if (hasIPv4 && hasIPv6) return;
   }
   throw new Error(
     "Le routeur n'a pas enregistré le blocage de cet appareil. Réessayez dans un instant."
