@@ -38,6 +38,25 @@ function normalizePhone(raw) {
   return digits.length >= 7 && digits.length <= 10 ? digits : null;
 }
 
+// Formes sous lesquelles un même numéro a pu être enregistré : avec ou sans le « 0 » initial.
+// Sert UNIQUEMENT à retrouver un compte (connexion, doublon à l'inscription) ; normalizePhone,
+// lui, ne devine rien et reste la forme enregistrée.
+function phoneVariants(raw) {
+  const out = [];
+  const add = (v) => { if (v && !out.includes(v)) out.push(v); };
+  const canon = normalizePhone(raw);
+  add(canon);
+  add(String(raw === null || raw === undefined ? "" : raw).trim());
+  if (canon && !canon.startsWith("+")) {
+    if (canon.startsWith("0")) {
+      if (canon.length - 1 >= 7) add(canon.slice(1));
+    } else if (canon.length + 1 <= 10) {
+      add("0" + canon);
+    }
+  }
+  return out;
+}
+
 // Met les numéros déjà enregistrés au format normalisé (une seule fois au démarrage).
 // Un numéro qui entrerait en collision avec un autre compte n'est pas modifié.
 function migrateClientPhones(db, log = console) {
@@ -71,4 +90,4 @@ function migrateClientPhones(db, log = console) {
   return { changed, skipped };
 }
 
-module.exports = { normalizePhone, migrateClientPhones };
+module.exports = { normalizePhone, phoneVariants, migrateClientPhones };

@@ -3,9 +3,10 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const db = require("../db");
 const { normalize } = require("../services/licenses");
-const { licenseRequired } = require("../config");
+const { licenseRequired, deviceRebindPolicy } = require("../config");
+const { decideDeviceBinding } = require("../services/deviceBinding");
 const { requireAuth } = require("../middleware/auth");
-const { normalizePhone } = require("../services/identity");
+const { normalizePhone, phoneVariants } = require("../services/identity");
 const { limits, clientIp, tooMany } = require("../middleware/rateLimit");
 
 const router = express.Router();
@@ -60,8 +61,11 @@ router.post("/register", async (req, res) => {
     }
   }
 
-  // Cherche le numéro normalisé, et aussi tel que saisi (comptes plus anciens non convertis).
-  const existing = db.prepare("SELECT id FROM clients WHERE phone IN (?, ?)").get(phone, rawPhone);
+  // Cherche le numéro sous toutes ses formes (avec/sans « 0 » initial, tel que saisi) pour ne pas créer de doublon.
+  const forms = phoneVariants(rawPhone);
+  const existing = db
+    .prepare(`SELECT id FROM clients WHERE phone IN (${forms.map(() => "?").join(",")})`)
+    .get(...forms);
   if (existing) return res.status(409).json({ error: "Ce numéro est déjà associé à un compte" });
 
   const hash = await bcrypt.hash(password, 10);
@@ -117,12 +121,19 @@ router.post("/login", async (req, res) => {
 
   if (!key || typeof password !== "string" || !password) return fail();
 
-  const find = db.prepare("SELECT * FROM clients WHERE phone = ?");
-  const c = (phone && find.get(phone)) || find.get(rawPhone);
-  if (!c) return fail();
+  // Le même numéro peut avoir été enregistré avec ou sans « 0 » initial : on essaie chaque forme,
+  // et le compte retenu est celui dont le mot de passe correspond.
+  const forms = phoneVariants(rawPhone);
+  const candidates = db
+    .prepare(`SELECT * FROM clients WHERE phone IN (${forms.map(() => "?").join(",")})`)
+    .all(...forms);
+  if (!candidates.length) return fail();
 
-  const valid = await bcrypt.compare(password, c.password_hash);
-  if (!valid) return fail();
+  let c = null;
+  for (const cand of candidates) {
+    if (await bcrypt.compare(password, cand.password_hash)) { c = cand; break; }
+  }
+  if (!c) return fail();
   limits.loginPhone.reset(key);
 
   if (licenseRequired()) {
@@ -131,10 +142,36 @@ router.post("/login", async (req, res) => {
       .get(c.id);
     if (!lic) return res.status(403).json({ error: "Aucune licence active", code: "LICENSE_REQUIRED" });
     if (!deviceId) return res.status(400).json({ error: "deviceId requis" });
-    if (!lic.device_id) {
+
+    // Mot de passe correct mais autre téléphone (app réinstallée, données effacées, téléphone changé) :
+    // on autorise un nombre limité de changements, puis il faut passer par le support.
+    const policy = deviceRebindPolicy();
+    const { n: changes } = db
+      .prepare("SELECT COUNT(*) AS n FROM license_device_changes WHERE license_id = ? AND changed_at >= datetime('now', ?)")
+      .get(lic.id, `-${policy.days} days`);
+    const decision = decideDeviceBinding({
+      boundDeviceId: lic.device_id,
+      deviceId,
+      changesInWindow: changes,
+      max: policy.max,
+    });
+
+    if (decision.action === "bind") {
       db.prepare("UPDATE licenses SET device_id = ? WHERE id = ?").run(String(deviceId), lic.id);
-    } else if (lic.device_id !== String(deviceId)) {
-      return res.status(403).json({ error: "Licence liée à un autre téléphone", code: "DEVICE_MISMATCH" });
+    } else if (decision.action === "rebind") {
+      db.transaction(() => {
+        db.prepare("UPDATE licenses SET device_id = ? WHERE id = ?").run(String(deviceId), lic.id);
+        db.prepare("INSERT INTO license_device_changes (license_id, old_device_id, new_device_id) VALUES (?, ?, ?)")
+          .run(lic.id, lic.device_id, String(deviceId));
+      })();
+    } else if (decision.action === "deny") {
+      const limit = decision.reason === "REBIND_LIMIT";
+      return res.status(403).json({
+        error: limit
+          ? "Ce compte est lié à un autre téléphone et la limite de changements est atteinte. Contactez l'assistance."
+          : "Licence liée à un autre téléphone",
+        code: limit ? "REBIND_LIMIT" : "DEVICE_MISMATCH",
+      });
     }
   }
 

@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { DatabaseSync } = require("node:sqlite");
-const { normalizePhone, migrateClientPhones } = require("../src/services/identity");
+const { normalizePhone, phoneVariants, migrateClientPhones } = require("../src/services/identity");
 
 test("un même numéro tapé de plusieurs façons donne la même forme", () => {
   const variantes = ["077123456", "077 12 34 56", "077-12-34-56", "+241077123456", "+241 077 12 34 56", "00241077123456", "241077123456"];
@@ -54,4 +54,18 @@ test("la migration est sans effet la deuxième fois", () => {
   const db = makeDb(["+241077123456"]);
   migrateClientPhones(db, quiet);
   assert.deepEqual(migrateClientPhones(db, quiet), { changed: 0, skipped: 0 });
+});
+
+test("phoneVariants retrouve un numéro avec ou sans le zéro initial, sans changer normalizePhone", () => {
+  assert.ok(phoneVariants("77589107").includes("077589107"));
+  assert.ok(phoneVariants("077589107").includes("77589107"));
+  assert.ok(phoneVariants("+241 077 58 91 07").includes("77589107"));
+  assert.ok(phoneVariants("+24177589107").includes("077589107"));
+  assert.equal(normalizePhone("77589107"), "77589107");
+});
+
+test("phoneVariants ne touche pas aux numéros étrangers ni invalides", () => {
+  assert.deepEqual(phoneVariants("+33 6 12 34 56 78"), ["+33612345678", "+33 6 12 34 56 78"]);
+  assert.deepEqual(phoneVariants("abc"), ["abc"]);
+  assert.deepEqual(phoneVariants(""), []);
 });

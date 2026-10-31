@@ -214,7 +214,10 @@ export default function App() {
   };
 
   const handleSaveSsid = (newSsid) => {
-    if (!newSsid || newSsid === ssid) return;
+    // On n'ignore la demande que si les DEUX réseaux portent déjà le bon nom (sinon, après un échec
+    // partiel, on ne pourrait plus terminer le changement avec le même nom).
+    const bothDone = newSsid === ssid && (!parentSsid || parentSsid === `${newSsid}5G`);
+    if (!newSsid || bothDone) return;
     Alert.alert("Changer le nom du wifi ?", "Tous les appareils seront déconnectés et devront se reconnecter avec le nouveau nom.", [
       { text: "Annuler", style: "cancel" },
       { text: "Changer", onPress: () => doSaveSsid(newSsid) },
@@ -222,9 +225,13 @@ export default function App() {
   };
   const doSaveSsid = async (newSsid) => {
     try {
-      await api.setSsid(router.id, newSsid);
+      const res = await api.setSsid(router.id, newSsid);
       setSsid(newSsid);
-      setParentSsid(`${newSsid}5G`);
+      if (res && res.skipped && res.skipped.length) {
+        Alert.alert("Nom modifié", `Ce routeur n'a pas de réseau ${res.skipped.join(" / ")} : seul le réseau principal a été renommé.`);
+      } else {
+        setParentSsid(`${newSsid}5G`);
+      }
     } catch (e) {
       Alert.alert("Erreur", e.message);
     }

@@ -4,6 +4,17 @@
 // le désactive (pour du développement local uniquement).
 const licenseRequired = () => process.env.LICENSE_REQUIRED !== "false";
 
+// Changements de téléphone autorisés sans l'administrateur : DEVICE_REBIND_MAX par fenêtre de
+// DEVICE_REBIND_DAYS jours (défaut 2 par 30 jours). 0 = jamais : seul l'administrateur peut lier un nouveau téléphone.
+function deviceRebindPolicy(env = process.env) {
+  const max = parseInt(env.DEVICE_REBIND_MAX, 10);
+  const days = parseInt(env.DEVICE_REBIND_DAYS, 10);
+  return {
+    max: Number.isInteger(max) && max >= 0 ? max : 2,
+    days: Number.isInteger(days) && days > 0 ? days : 30,
+  };
+}
+
 function validateEnv(env = process.env, log = console, exit = process.exit) {
   const missing = ["JWT_SECRET", "ADMIN_KEY", "APP_PRICE"].filter(
     (k) => !String(env[k] || "").trim()
@@ -33,4 +44,4 @@ function validateEnv(env = process.env, log = console, exit = process.exit) {
   return true;
 }
 
-module.exports = { licenseRequired, validateEnv };
+module.exports = { licenseRequired, deviceRebindPolicy, validateEnv };

@@ -114,8 +114,8 @@ async function rawRequest(body, timeoutMs = 15000) {
   }
 }
 
-async function refreshCsrf() {
-  const r = await rawRequest({ cmd: commandFor("CSRF"), method: "GET", sessionId: session.id });
+async function refreshCsrf(timeoutMs) {
+  const r = await rawRequest({ cmd: commandFor("CSRF"), method: "GET", sessionId: session.id }, timeoutMs);
   session.token = r.token || "";
 }
 
@@ -173,7 +173,7 @@ async function get(cmd, extra = {}, retry = true) {
   return r;
 }
 
-async function post(cmd, extra = {}, retry = true) {
+async function post(cmd, extra = {}, retry = true, opts = {}) {
   await ensureSession();
   const r = await rawRequest({
     ...extra,
@@ -185,11 +185,11 @@ async function post(cmd, extra = {}, retry = true) {
   if (r && r.success === false) {
     if (retry) {
       session = { id: "", token: "" };
-      return post(cmd, extra, false);
+      return post(cmd, extra, false, opts);
     }
     throw new Error(r.message || "Le routeur a refusé la commande");
   }
-  await refreshCsrf().catch(() => {});
+  await refreshCsrf(opts.quick ? 3000 : undefined).catch(() => {});
   return r;
 }
 
@@ -270,28 +270,85 @@ async function confirmBand(cmd, changes, postReply) {
   );
 }
 
-// La modification d'une bande peut couper le wifi du téléphone. Le réseau principal (2,4 GHz), celui
-// où se trouve en général le téléphone, est donc modifié EN DERNIER, après vérification du 5 GHz.
-// Les deux lectures sont faites avant toute écriture, et si le routeur redémarre son wifi entre les
-// deux, l'envoi du 2,4 GHz est réessayé jusqu'à ce que le routeur réponde de nouveau.
+// Écrit les DEUX bandes (2,4 GHz et 5 GHz) avec la même modification de nom ou de visibilité.
+// Le routeur coupe le wifi un instant après une écriture : un téléphone connecté à une bande perd alors
+// le routeur. On lit donc tout AVANT d'écrire, puis on envoie les deux écritures coup sur coup
+// (2,4 GHz d'abord, car le téléphone du parent est en général sur le 5 GHz), et on vérifie ensuite.
+// Si une bande n'a pas pu être écrite, l'erreur dit laquelle, et refaire la même action termine le travail.
 async function updateBothBands(changes5g, changes24g) {
   const cmd24 = commandFor("WIFI_24");
   const cmd5 = commandFor("WIFI_5");
-  const b5 = await buildBandBody(cmd5, changes5g, true);
-  const b24 = await buildBandBody(cmd24, changes24g, false);
 
-  const r5 = await post(cmd5, b5.body);
-  if (Object.keys(b5.checkable).length) await confirmBand(cmd5, b5.checkable, r5);
-
+  const bands = [{ key: "24", name: "2,4 GHz", cmd: cmd24, plan: await buildBandBody(cmd24, changes24g, false) }];
+  let skipped = [];
   try {
-    await postWithRetry(cmd24, b24.body);
+    bands.push({ key: "5", name: "5 GHz", cmd: cmd5, plan: await buildBandBody(cmd5, changes5g, true) });
   } catch (e) {
-    if (e && e.code === "ROUTER_UNREACHABLE") {
-      throw new Error(
-        "Le réseau parental (5 GHz) a été renommé, mais le réseau principal (2,4 GHz) n'a pas pu l'être : le routeur ne répond plus. Reconnectez-vous à son wifi et recommencez."
-      );
+    if (e && e.code === "ROUTER_UNREACHABLE") throw e;
+    skipped = ["5 GHz"]; // routeur à une seule bande : on ne modifie que la 2,4 GHz
+  }
+
+  // La bande du téléphone est écrite EN DERNIER. On l'apprend : si le routeur disparaît juste après
+  // l'écriture d'une bande, c'est que le téléphone était dessus, et on s'en souvient pour la fois suivante.
+  const hint = await AsyncStorage.getItem("phoneBandHint").catch(() => null);
+  if (hint) bands.sort((a, b) => (a.key === hint ? 1 : 0) - (b.key === hint ? 1 : 0));
+
+  let lastWritten = null;
+  for (const b of bands) {
+    try {
+      b.reply = await post(b.cmd, b.plan.body, true, { quick: true });
+      lastWritten = b;
+    } catch (e) {
+      if (e && e.code === "ROUTER_UNREACHABLE") {
+        if (lastWritten) await AsyncStorage.setItem("phoneBandHint", lastWritten.key).catch(() => {});
+        // Le wifi redémarre : on réessaie un moment avant de renoncer.
+        try { b.reply = await postWithRetry(b.cmd, b.plan.body, 4); lastWritten = b; } catch (e2) { b.error = e2; }
+      } else {
+        b.error = e;
+      }
     }
-    throw e;
+  }
+
+  const failed = bands.filter((b) => b.error);
+  if (failed.length) {
+    const done = bands.filter((b) => !b.error).map((b) => b.name);
+    const names = failed.map((b) => b.name).join(" et ");
+    const lost = failed.every((b) => b.error.code === "ROUTER_UNREACHABLE");
+    throw new Error(
+      lost
+        ? `Modifié sur : ${done.join(" et ") || "aucune bande"}. Pas encore sur : ${names}, car le routeur ne répond plus (le téléphone a perdu le wifi). Reconnectez-vous au wifi puis refaites la même modification pour terminer.`
+        : `Le routeur a refusé la modification sur ${names} (${failed[0].error.message}).`
+    );
+  }
+
+  await confirmBands(bands);
+  return { skipped };
+}
+
+// Vérifie que chaque bande a retenu la modification ; envoie « appliquer » une fois si besoin.
+// Un routeur injoignable (le téléphone doit se reconnecter) est simplement non vérifiable : pas d'erreur.
+async function confirmBands(bands) {
+  let pending = bands.filter((b) => Object.keys(b.plan.checkable).length);
+  let applied = false;
+  for (const wait of [1200, 2500, 4000]) {
+    if (!pending.length) return;
+    await sleep(wait);
+    const still = [];
+    for (const b of pending) {
+      let cur;
+      try { cur = await readBand(b.cmd); } catch (_) { continue; }
+      if (!cur || cur.success === false) continue;
+      const ok = Object.entries(b.plan.checkable).every(([k, v]) => normWire(cur[k]) === normWire(v));
+      if (!ok) still.push(b);
+    }
+    pending = still;
+    if (pending.length && !applied) {
+      applied = true;
+      await post(commandFor("APPLY"), {}).catch(() => {});
+    }
+  }
+  if (pending.length) {
+    throw new Error(`Le routeur n'a pas appliqué la modification sur : ${pending.map((b) => b.name).join(" et ")}. Réessayez.`);
   }
 }
 
@@ -511,7 +568,7 @@ export const api = {
         wifi_on: w24.wifiOpen === "1",
         ssid: decodeSsid(w24 && w24.ssid),
         password: decodeKey(w24 && w24.key),
-        visible: !w5 || w5.broadcast !== "0",
+        visible: [w24, w5].filter(Boolean).some((w) => w.broadcast !== "0"),
         parent_ssid: decodeSsid(w5 && w5.ssid),
         parent_password: decodeKey(w5 && w5.key),
         // Renseigné quand le routeur n'a pas fourni la configuration wifi (pour comprendre pourquoi).
@@ -585,11 +642,11 @@ export const api = {
     // Relit le réseau pour savoir si le routeur attend le nom en base64 ou en clair.
     const current = await readBand(commandFor("WIFI_24"));
     if (current && current.ssid) decodeSsid(current.ssid);
-    await updateBothBands(
+    const res = await updateBothBands(
       { ssid: encodeSsid(`${ssid}5G`) },
       { ssid: encodeSsid(ssid) }
     );
-    return { ok: true };
+    return { ok: true, ...res };
   },
 
   setPassword: async (routerId, password) => {
@@ -603,8 +660,9 @@ export const api = {
   },
 
   setVisibility: async (routerId, visible) => {
-    await updateBand(commandFor("WIFI_5"), { broadcast: visible ? "1" : "0" }, true);
-    return { ok: true };
+    const v = visible ? "1" : "0";
+    const res = await updateBothBands({ broadcast: v }, { broadcast: v });
+    return { ok: true, ...res };
   },
 
   setTimer: async (routerId, minutes) => {

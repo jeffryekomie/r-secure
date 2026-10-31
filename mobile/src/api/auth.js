@@ -8,6 +8,7 @@ const API_URL = (
 const TOKEN_KEY = "rconnect_client_token";
 const DEVICE_ID_KEY = "rconnect_installation_id";
 const VERIFIED_KEY = "rconnect_last_verified";
+const LAST_PHONE_KEY = "rconnect_last_phone";
 const GRACE_MS = 7 * 24 * 60 * 60 * 1000; // serveur injoignable : on tolère 7 jours
 
 export async function getDeviceId() {
@@ -33,7 +34,9 @@ async function request(path, body) {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(data.error || `Erreur serveur (${response.status})`);
+    const err = new Error(data.error || `Erreur serveur (${response.status})`);
+    err.code = data.code;
+    throw err;
   }
 
   if (!data.token) {
@@ -53,23 +56,32 @@ export async function registerClient(
 ) {
   const deviceId = await getDeviceId();
 
-  return request("/auth/register", {
+  const data = await request("/auth/register", {
     name,
     phone,
     password,
     licenseCode,
     deviceId,
   });
+  await AsyncStorage.setItem(LAST_PHONE_KEY, phone).catch(() => {});
+  return data;
 }
 
 export async function loginClient(phone, password) {
   const deviceId = await getDeviceId();
 
-  return request("/auth/login", {
+  const data = await request("/auth/login", {
     phone,
     password,
     deviceId,
   });
+  await AsyncStorage.setItem(LAST_PHONE_KEY, phone).catch(() => {});
+  return data;
+}
+
+// Dernier numéro utilisé : proposé à la reconnexion après une déconnexion.
+export async function getLastPhone() {
+  return (await AsyncStorage.getItem(LAST_PHONE_KEY)) || "";
 }
 
 export async function getClientToken() {

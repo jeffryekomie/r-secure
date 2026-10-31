@@ -38,6 +38,19 @@ db.exec(`
 `);
 
 
+// Journal des changements de téléphone en libre-service (limite le partage d'un compte).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS license_device_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    license_id INTEGER NOT NULL REFERENCES licenses(id),
+    old_device_id TEXT,
+    new_device_id TEXT NOT NULL,
+    changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_device_changes_license
+    ON license_device_changes(license_id, changed_at);
+`);
+
 // Migration compatible avec les bases déjà existantes.
 const paymentColumns = db.pragma("table_info(payments)");
 if (!paymentColumns.some((column) => column.name === "receipt_confirmed_at")) {

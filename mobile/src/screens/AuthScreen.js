@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import { colors } from "../theme/colors";
-import { loginClient, registerClient } from "../api/auth";
+import { getLastPhone, loginClient, registerClient } from "../api/auth";
 
 export default function AuthScreen({ onAuthenticated }) {
   const [isRegister, setIsRegister] = useState(false);
@@ -21,6 +21,13 @@ export default function AuthScreen({ onAuthenticated }) {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Après une déconnexion, le dernier numéro est déjà rempli : il ne reste qu'à saisir le mot de passe.
+  useEffect(() => {
+    let active = true;
+    getLastPhone().then((p) => { if (active && p) setPhone((cur) => cur || p); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   async function submit() {
     if (!phone.trim() || !password) {
@@ -60,9 +67,11 @@ export default function AuthScreen({ onAuthenticated }) {
 
       onAuthenticated?.();
     } catch (error) {
+      const lockedToOtherPhone = error?.code === "DEVICE_MISMATCH" || error?.code === "REBIND_LIMIT";
       Alert.alert(
         isRegister ? "Inscription impossible" : "Connexion impossible",
-        error?.message || "Vérifie les informations et le serveur."
+        (error?.message || "Vérifie les informations et le serveur.") +
+          (lockedToOtherPhone ? "\n\nContacte l'assistance (202) pour lier ce compte à ce téléphone." : "")
       );
     } finally {
       setLoading(false);
